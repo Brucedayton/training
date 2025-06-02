@@ -21,6 +21,7 @@
           @node-delete="handleNodeDelete"
           @node-copy="handleNodeCopy"
           @node-set-group="handleNodeSetGroup"
+          ref="schemaTreeRef"
         />
       </div>
       <div class="right-panel">
@@ -116,26 +117,27 @@ const handleAddRoot = () => {
 }
 
 const handleNodeAdd = (newNode, parentNode) => {
-  const addNodeToTree = (items) => {
-    return items.map(item => {
-      if (!parentNode || item.id === parentNode.id) {
-        if (!item.children) {
-          item.children = []
+  // 如果是添加到分组中
+  if (parentNode) {
+    const addNodeToTree = (items) => {
+      return items.map(item => {
+        if (item.id === parentNode.id) {
+          if (!item.children) {
+            item.children = []
+          }
+          item.children.push(newNode)
+          return item
         }
-        item.children.push(newNode)
+        if (item.children) {
+          item.children = addNodeToTree(item.children)
+        }
         return item
-      }
-      if (item.children) {
-        item.children = addNodeToTree(item.children)
-      }
-      return item
-    })
-  }
-
-  if (!parentNode) {
-    treeData.value.push(newNode)
+      })
+    }
+    treeData.value = addNodeToTree([...treeData.value])
   } else {
-    treeData.value = addNodeToTree(treeData.value)
+    // 添加到顶层
+    treeData.value = [...treeData.value, newNode]
   }
   currentNode.value = newNode
 }
@@ -224,27 +226,23 @@ const hasParentNode = (node) => {
 }
 
 const handleNodeSetGroup = (node, groupNode) => {
-  // 从原位置移除节点
-  const removeNode = (items) => {
-    return items.filter(item => {
-      if (item.id === node.id) {
-        return false
-      }
-      if (item.children) {
-        item.children = removeNode(item.children)
-      }
-      return true
-    })
-  }
-
-  // 添加到新分组
+  console.log('Moving node to group:', { node, groupNode })
+  
+  // 深度复制要移动的节点
+  const nodeToMove = JSON.parse(JSON.stringify(node))
+  
+  // 先从顶层移除节点
+  const filteredTree = treeData.value.filter(item => item.id !== node.id)
+  
+  // 添加到目标分组
   const addToGroup = (items) => {
     return items.map(item => {
       if (item.id === groupNode.id) {
+        console.log('Found target group:', item.id)
         if (!item.children) {
           item.children = []
         }
-        item.children.push(node)
+        item.children.push(nodeToMove)
         return item
       }
       if (item.children) {
@@ -254,8 +252,12 @@ const handleNodeSetGroup = (node, groupNode) => {
     })
   }
 
-  treeData.value = removeNode(treeData.value)
-  treeData.value = addToGroup(treeData.value)
+  // 更新树结构
+  treeData.value = addToGroup(filteredTree)
+  console.log('Final tree:', treeData.value)
+  
+  // 更新当前选中节点
+  currentNode.value = nodeToMove
 }
 </script>
 

@@ -86,23 +86,62 @@
       :modal="true"
       destroy-on-close
     >
-      <el-tree
-        ref="groupSelectTree"
-        :data="getGroupNodes()"
-        :props="defaultProps"
-        @node-click="handleGroupSelect"
-        node-key="id"
-        highlight-current
-      >
-        <template #default="{ node, data }">
-          <span>{{ data.name }}</span>
-        </template>
-      </el-tree>
+      <div v-if="getGroupNodes().length === 0" class="empty-group">
+        <el-empty description="No groups available">
+          <el-button type="primary" @click="handleCreateGroup">Create New Group</el-button>
+        </el-empty>
+      </div>
+      <template v-else>
+        <el-tree
+          ref="groupSelectTree"
+          :data="getGroupNodes()"
+          :props="defaultProps"
+          @node-click="handleGroupSelect"
+          node-key="id"
+          highlight-current
+        >
+          <template #default="{ node, data }">
+            <span>{{ data.name }}</span>
+          </template>
+        </el-tree>
+        <div class="dialog-footer">
+          <el-button @click="handleCreateSubGroup">Create Subgroup</el-button>
+          <el-button @click="groupSelectVisible = false">Cancel</el-button>
+          <el-button type="primary" @click="handleGroupSelectConfirm" :disabled="!selectedGroupNode">
+            Confirm
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 创建分组的对话框 -->
+    <el-dialog
+      v-model="createGroupVisible"
+      :title="selectedGroupNode ? 'Create Subgroup' : 'Create Group'"
+      width="30%"
+      :modal="true"
+      destroy-on-close
+    >
+      <el-form :model="newGroupForm" label-width="100px">
+        <el-form-item label="Name">
+          <el-input v-model="newGroupForm.name" placeholder="Enter group name" />
+        </el-form-item>
+        <el-form-item label="Color">
+          <el-color-picker v-model="newGroupForm.color" />
+        </el-form-item>
+        <el-form-item label="Description">
+          <el-input
+            v-model="newGroupForm.description"
+            type="textarea"
+            placeholder="Enter group description"
+          />
+        </el-form-item>
+      </el-form>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="groupSelectVisible = false">Cancel</el-button>
-          <el-button type="primary" @click="handleGroupSelectConfirm">
-            Confirm
+          <el-button @click="createGroupVisible = false">Cancel</el-button>
+          <el-button type="primary" @click="handleCreateGroupConfirm">
+            Create
           </el-button>
         </span>
       </template>
@@ -128,6 +167,7 @@ const treeRef = ref(null)
 const groupSelectTree = ref(null)
 const contextMenuVisible = ref(false)
 const groupSelectVisible = ref(false)
+const createGroupVisible = ref(false)
 const contextMenuStyle = ref({
   position: 'fixed',
   top: '0px',
@@ -136,6 +176,11 @@ const contextMenuStyle = ref({
 })
 const currentNode = ref(null)
 const selectedGroupNode = ref(null)
+const newGroupForm = ref({
+  name: '',
+  color: '#409EFF',
+  description: ''
+})
 
 const defaultProps = {
   children: 'children',
@@ -263,9 +308,48 @@ const handleGroupSelect = (data) => {
 
 const handleGroupSelectConfirm = () => {
   if (selectedGroupNode.value) {
+    // 先发送设置分组的事件
     emit('node-set-group', currentNode.value, selectedGroupNode.value)
+    // 关闭所有对话框
     groupSelectVisible.value = false
     selectedGroupNode.value = null
+    contextMenuVisible.value = false
+  }
+}
+
+const handleCreateGroup = () => {
+  selectedGroupNode.value = null
+  createGroupVisible.value = true
+}
+
+const handleCreateSubGroup = () => {
+  createGroupVisible.value = true
+}
+
+const handleCreateGroupConfirm = () => {
+  const newGroup = {
+    id: generateId(),
+    name: newGroupForm.value.name,
+    type: 'group',
+    color: newGroupForm.value.color,
+    description: newGroupForm.value.description,
+    children: []
+  }
+
+  // 发送添加分组的事件
+  emit('node-add', newGroup, selectedGroupNode.value)
+  
+  // 如果是从设置分组对话框创建的，自动选中新创建的分组
+  if (groupSelectVisible.value) {
+    selectedGroupNode.value = newGroup
+  }
+
+  createGroupVisible.value = false
+  // 重置表单
+  newGroupForm.value = {
+    name: '',
+    color: '#409EFF',
+    description: ''
   }
 }
 
@@ -375,5 +459,15 @@ const handleDragEnd = (draggingNode, dropNode, dropType) => {
 .menu-item .el-icon {
   margin-right: 8px;
   font-size: 16px;
+}
+
+.empty-group {
+  padding: 20px;
+  text-align: center;
+}
+
+.dialog-footer {
+  margin-top: 20px;
+  text-align: right;
 }
 </style> 
