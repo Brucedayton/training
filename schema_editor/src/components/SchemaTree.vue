@@ -1,0 +1,379 @@
+<template>
+  <div class="schema-tree" @contextmenu.prevent>
+    <el-tree
+      ref="treeRef"
+      :data="data"
+      :props="defaultProps"
+      draggable
+      :allow-drop="allowDrop"
+      :allow-drag="allowDrag"
+      @node-drag-end="handleDragEnd"
+      @node-click="handleNodeClick"
+      @node-contextmenu="handleContextMenu"
+    >
+      <template #default="{ node, data }">
+        <div class="custom-tree-node">
+          <el-icon :class="getIconClass(data.type)">
+            <Folder v-if="data.type === 'group'" />
+            <Document v-else-if="data.type === 'schema'" />
+            <List v-else-if="data.type === 'column'" />
+          </el-icon>
+          <span>{{ data.name }}</span>
+        </div>
+      </template>
+    </el-tree>
+
+    <el-dialog
+      v-model="contextMenuVisible"
+      :show-close="false"
+      :modal="false"
+      :close-on-click-modal="true"
+      :close-on-press-escape="true"
+      class="context-menu-dialog"
+      :style="contextMenuStyle"
+      @click.self="contextMenuVisible = false"
+    >
+      <div class="context-menu-content" @click.stop>
+        <!-- 根据当前节点类型显示不同的添加选项 -->
+        <template v-if="!currentNode || currentNode.type === 'group'">
+          <div class="menu-item" @click="handleAddNode('group')">
+            <el-icon><FolderAdd /></el-icon>
+            Add Group
+          </div>
+          <div class="menu-item" @click="handleAddNode('schema')">
+            <el-icon><DocumentAdd /></el-icon>
+            Add Schema
+          </div>
+        </template>
+        <template v-if="currentNode && currentNode.type === 'schema'">
+          <div class="menu-item" @click="handleAddNode('column')">
+            <el-icon><Plus /></el-icon>
+            Add Column
+          </div>
+        </template>
+
+        <!-- 复制选项对所有节点都显示 -->
+        <template v-if="currentNode">
+          <div class="menu-item" @click="handleCopyNode">
+            <el-icon><CopyDocument /></el-icon>
+            Copy
+          </div>
+        </template>
+
+        <!-- Schema节点且没有父节点时显示设置分组选项 -->
+        <template v-if="currentNode && currentNode.type === 'schema' && !hasParentNode(currentNode)">
+          <div class="menu-item" @click="handleSetGroup">
+            <el-icon><FolderAdd /></el-icon>
+            Set Group
+          </div>
+        </template>
+
+        <!-- 删除选项始终显示，除非是根节点 -->
+        <template v-if="currentNode">
+          <div class="menu-item danger" @click="handleDeleteNode">
+            <el-icon><Delete /></el-icon>
+            Delete
+          </div>
+        </template>
+      </div>
+    </el-dialog>
+
+    <!-- 选择分组的对话框 -->
+    <el-dialog
+      v-model="groupSelectVisible"
+      title="Select Group"
+      width="30%"
+      :modal="true"
+      destroy-on-close
+    >
+      <el-tree
+        ref="groupSelectTree"
+        :data="getGroupNodes()"
+        :props="defaultProps"
+        @node-click="handleGroupSelect"
+        node-key="id"
+        highlight-current
+      >
+        <template #default="{ node, data }">
+          <span>{{ data.name }}</span>
+        </template>
+      </el-tree>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="groupSelectVisible = false">Cancel</el-button>
+          <el-button type="primary" @click="handleGroupSelectConfirm">
+            Confirm
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, defineProps, defineEmits } from 'vue'
+import { Folder, Document, List, FolderAdd, DocumentAdd, Plus, Delete, CopyDocument } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
+
+const props = defineProps({
+  data: {
+    type: Array,
+    required: true
+  }
+})
+
+const emit = defineEmits(['node-click', 'node-drop', 'node-add', 'node-delete', 'node-copy', 'node-set-group'])
+
+const treeRef = ref(null)
+const groupSelectTree = ref(null)
+const contextMenuVisible = ref(false)
+const groupSelectVisible = ref(false)
+const contextMenuStyle = ref({
+  position: 'fixed',
+  top: '0px',
+  left: '0px',
+  margin: '0'
+})
+const currentNode = ref(null)
+const selectedGroupNode = ref(null)
+
+const defaultProps = {
+  children: 'children',
+  label: 'name'
+}
+
+const getIconClass = (type) => {
+  return {
+    'tree-icon': true,
+    'is-group': type === 'group',
+    'is-schema': type === 'schema',
+    'is-column': type === 'column'
+  }
+}
+
+const handleNodeClick = (data, node) => {
+  emit('node-click', data)
+}
+
+const handleContextMenu = (event, data, node) => {
+  event.preventDefault()
+  currentNode.value = data
+  contextMenuStyle.value = {
+    position: 'fixed',
+    top: event.clientY + 'px',
+    left: event.clientX + 'px',
+    margin: '0'
+  }
+  contextMenuVisible.value = true
+}
+
+const generateId = () => {
+  return Date.now().toString()
+}
+
+const handleAddNode = (type) => {
+  const newNode = {
+    id: generateId(),
+    name: type === 'group' ? 'New Group' : type === 'schema' ? 'New Schema' : 'New Column',
+    type: type,
+    color: '#409EFF',
+    description: '',
+    children: type !== 'column' ? [] : undefined
+  }
+
+  if (type === 'schema') {
+    newNode.database = ''
+    newNode.tableName = ''
+  } else if (type === 'column') {
+    newNode.dataType = 'string'
+    newNode.required = false
+    newNode.defaultValue = null
+  }
+
+  emit('node-add', newNode, currentNode.value)
+  contextMenuVisible.value = false
+}
+
+const handleDeleteNode = () => {
+  ElMessageBox.confirm(
+    'Are you sure you want to delete this node? All child nodes will also be deleted.',
+    'Confirm Delete',
+    {
+      confirmButtonText: 'Delete',
+      cancelButtonText: 'Cancel',
+      type: 'warning'
+    }
+  ).then(() => {
+    emit('node-delete', currentNode.value)
+    contextMenuVisible.value = false
+  }).catch(() => {})
+}
+
+const handleCopyNode = () => {
+  const copyNode = (node) => {
+    const newNode = { ...node }
+    newNode.id = generateId()
+    if (newNode.children) {
+      newNode.children = newNode.children.map(child => copyNode(child))
+    }
+    return newNode
+  }
+
+  const copiedNode = copyNode(currentNode.value)
+  copiedNode.name = `${copiedNode.name} (Copy)`
+  emit('node-copy', copiedNode, currentNode.value)
+  contextMenuVisible.value = false
+}
+
+const hasParentNode = (node) => {
+  const findParent = (items, targetId) => {
+    for (const item of items) {
+      if (item.children) {
+        if (item.children.some(child => child.id === targetId)) {
+          return true
+        }
+        if (findParent(item.children, targetId)) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+  return findParent(props.data, node.id)
+}
+
+const getGroupNodes = () => {
+  const filterGroups = (items) => {
+    return items.filter(item => item.type === 'group').map(item => ({
+      ...item,
+      children: item.children ? filterGroups(item.children) : []
+    }))
+  }
+  return filterGroups(props.data)
+}
+
+const handleSetGroup = () => {
+  groupSelectVisible.value = true
+  contextMenuVisible.value = false
+}
+
+const handleGroupSelect = (data) => {
+  selectedGroupNode.value = data
+}
+
+const handleGroupSelectConfirm = () => {
+  if (selectedGroupNode.value) {
+    emit('node-set-group', currentNode.value, selectedGroupNode.value)
+    groupSelectVisible.value = false
+    selectedGroupNode.value = null
+  }
+}
+
+const allowDrop = (draggingNode, dropNode, type) => {
+  const draggingType = draggingNode.data.type
+  const dropType = dropNode.data.type
+
+  if (type === 'prev' || type === 'next') {
+    return draggingType === dropType
+  }
+
+  if (type === 'inner') {
+    if (dropType === 'group') {
+      return draggingType === 'group' || draggingType === 'schema'
+    }
+    if (dropType === 'schema') {
+      return draggingType === 'column'
+    }
+  }
+
+  return false
+}
+
+const allowDrag = (node) => {
+  return true
+}
+
+const handleDragEnd = (draggingNode, dropNode, dropType) => {
+  if (dropNode) {
+    emit('node-drop', draggingNode.data, dropNode.data, dropType)
+  }
+}
+</script>
+
+<style scoped>
+.schema-tree {
+  padding: 10px;
+  position: relative;
+}
+
+.custom-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tree-icon {
+  font-size: 16px;
+}
+
+.is-group {
+  color: #409EFF;
+}
+
+.is-schema {
+  color: #67C23A;
+}
+
+.is-column {
+  color: #E6A23C;
+}
+
+:deep(.context-menu-dialog) {
+  margin: 0;
+  padding: 0;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+:deep(.context-menu-dialog .el-dialog__header) {
+  display: none;
+}
+
+:deep(.context-menu-dialog .el-dialog__body) {
+  padding: 0;
+}
+
+.context-menu-content {
+  background: white;
+  border-radius: 4px;
+  padding: 4px 0;
+  min-width: 160px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #606266;
+  white-space: nowrap;
+}
+
+.menu-item:hover {
+  background-color: #ecf5ff;
+}
+
+.menu-item.danger {
+  color: #F56C6C;
+}
+
+.menu-item.danger:hover {
+  background-color: #fef0f0;
+}
+
+.menu-item .el-icon {
+  margin-right: 8px;
+  font-size: 16px;
+}
+</style> 
