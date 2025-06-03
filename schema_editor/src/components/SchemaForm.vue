@@ -7,11 +7,11 @@
     >
       <!-- Common Properties -->
       <el-form-item label="Name">
-        <el-input v-model="formData.name" />
+        <el-input v-model="formData.name" @change="handleChange" />
       </el-form-item>
 
       <el-form-item label="Color">
-        <el-color-picker v-model="formData.color" />
+        <el-color-picker v-model="formData.color" @change="handleChange" />
       </el-form-item>
 
       <el-form-item label="Description">
@@ -19,23 +19,24 @@
           v-model="formData.description"
           type="textarea"
           :rows="3"
+          @change="handleChange"
         />
       </el-form-item>
 
       <!-- Schema Properties -->
       <template v-if="formData.type === 'schema'">
         <el-form-item label="Database">
-          <el-input v-model="formData.database" />
+          <el-input v-model="formData.database" @change="handleChange" />
         </el-form-item>
         <el-form-item label="Table Name">
-          <el-input v-model="formData.tableName" />
+          <el-input v-model="formData.tableName" @change="handleChange" />
         </el-form-item>
       </template>
 
       <!-- Column Properties -->
       <template v-if="formData.type === 'column'">
         <el-form-item label="Data Type">
-          <el-select v-model="formData.dataType" style="width: 100%">
+          <el-select v-model="formData.dataType" @change="handleChange" style="width: 100%">
             <el-option label="String" value="string" />
             <el-option label="Boolean" value="boolean" />
             <el-option label="Integer" value="integer" />
@@ -47,17 +48,17 @@
         <!-- String Type Properties -->
         <template v-if="formData.dataType === 'string'">
           <el-form-item label="Max Length">
-            <el-input-number v-model="formData.maxLength" :min="1" />
+            <el-input-number v-model="formData.maxLength" :min="1" @change="handleChange" />
           </el-form-item>
         </template>
 
         <!-- Integer Type Properties -->
         <template v-if="formData.dataType === 'integer'">
           <el-form-item label="Min Value">
-            <el-input-number v-model="formData.minValue" />
+            <el-input-number v-model="formData.minValue" @change="handleChange" />
           </el-form-item>
           <el-form-item label="Max Value">
-            <el-input-number v-model="formData.maxValue" />
+            <el-input-number v-model="formData.maxValue" @change="handleChange" />
           </el-form-item>
         </template>
 
@@ -69,6 +70,7 @@
               type="textarea"
               :rows="3"
               placeholder="Enter calculation formula"
+              @change="handleChange"
             />
           </el-form-item>
         </template>
@@ -81,6 +83,7 @@
                 v-model="option.value"
                 placeholder="Option value"
                 class="option-input"
+                @change="handleChange"
               />
               <el-button
                 type="danger"
@@ -91,22 +94,22 @@
                 <el-icon><Delete /></el-icon>
               </el-button>
             </div>
-            <el-button type="primary" plain @click="addOption" class="add-option">
+            <el-button type="primary" plain @click="addOption" class="add-option" @change="handleChange">
               Add Option
             </el-button>
           </el-form-item>
         </template>
 
         <el-form-item label="Required">
-          <el-switch v-model="formData.required" />
+          <el-switch v-model="formData.required" @change="handleChange" />
         </el-form-item>
 
         <el-form-item label="Default Value">
           <template v-if="formData.dataType === 'boolean'">
-            <el-switch v-model="formData.defaultValue" />
+            <el-switch v-model="formData.defaultValue" @change="handleChange" />
           </template>
           <template v-else-if="formData.dataType === 'select'">
-            <el-select v-model="formData.defaultValue" style="width: 100%">
+            <el-select v-model="formData.defaultValue" style="width: 100%" @change="handleChange">
               <el-option
                 v-for="option in formData.options"
                 :key="option.value"
@@ -116,7 +119,11 @@
             </el-select>
           </template>
           <template v-else>
-            <el-input v-model="formData.defaultValue" />
+            <el-input
+              v-model="formData.defaultValue"
+              :placeholder="getDefaultValuePlaceholder(formData.dataType)"
+              @change="handleChange"
+            />
           </template>
         </el-form-item>
       </template>
@@ -128,61 +135,78 @@
   </div>
 </template>
 
-<script setup>
-import { ref, defineProps, defineEmits, watch } from 'vue'
+<script>
+import { ref, defineComponent, watch } from 'vue'
 import { Delete } from '@element-plus/icons-vue'
 
-const props = defineProps({
-  node: {
-    type: Object,
-    required: true
+export default defineComponent({
+  name: 'SchemaForm',
+  props: {
+    node: {
+      type: Object,
+      required: true
+    }
+  },
+  emits: ['update'],
+  setup(props, { emit }) {
+    const formData = ref({ ...props.node })
+
+    // 监听 node 属性的变化
+    watch(() => props.node, (newVal) => {
+      formData.value = { ...newVal }
+    }, { deep: true })
+
+    const handleChange = () => {
+      emit('update', { ...formData.value })
+    }
+
+    const addOption = () => {
+      if (!formData.value.options) {
+        formData.value.options = []
+      }
+      formData.value.options.push({
+        label: `选项${formData.value.options.length + 1}`,
+        value: `option${formData.value.options.length + 1}`
+      })
+    }
+
+    const removeOption = (index) => {
+      formData.value.options.splice(index, 1)
+    }
+
+    const handleSubmit = () => {
+      emit('update', { ...formData.value })
+    }
+
+    const getDefaultValuePlaceholder = (dataType) => {
+      switch (dataType) {
+        case 'string':
+          return 'Enter text value'
+        case 'number':
+          return 'Enter numeric value'
+        case 'boolean':
+          return 'true or false'
+        case 'date':
+          return 'YYYY-MM-DD'
+        case 'object':
+          return '{ "key": "value" }'
+        case 'array':
+          return '["item1", "item2"]'
+        default:
+          return 'Enter value'
+      }
+    }
+
+    return {
+      formData,
+      handleChange,
+      addOption,
+      removeOption,
+      handleSubmit,
+      getDefaultValuePlaceholder
+    }
   }
 })
-
-const emit = defineEmits(['update'])
-
-// 初始化表单数据，确保所有可能的字段都有默认值
-const initFormData = (node) => {
-  const baseData = { ...node }
-  if (node.type === 'column') {
-    baseData.dataType = baseData.dataType || 'string'
-    baseData.required = baseData.required ?? false
-    baseData.maxLength = baseData.maxLength || 255
-    baseData.minValue = baseData.minValue || 0
-    baseData.maxValue = baseData.maxValue || 999999
-    baseData.formula = baseData.formula || ''
-    baseData.options = baseData.options || []
-    baseData.defaultValue = baseData.defaultValue || ''
-  }
-  baseData.color = baseData.color || '#409EFF'
-  baseData.description = baseData.description || ''
-  return baseData
-}
-
-const formData = ref(initFormData(props.node))
-
-// 监听节点变化，更新表单数据
-watch(() => props.node, (newVal) => {
-  formData.value = initFormData(newVal)
-}, { deep: true })
-
-const addOption = () => {
-  if (!formData.value.options) {
-    formData.value.options = []
-  }
-  formData.value.options.push({
-    label: `选项${formData.value.options.length + 1}`,
-    value: `option${formData.value.options.length + 1}`
-  })
-}
-
-const removeOption = (index) => {
-  formData.value.options.splice(index, 1)
-}
-
-const handleSubmit = () => {
-  emit('update', { ...formData.value })
-}
 </script>
 
 <style scoped>

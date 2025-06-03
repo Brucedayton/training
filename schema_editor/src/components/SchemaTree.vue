@@ -1,27 +1,30 @@
 <template>
-  <div class="schema-tree" @contextmenu.prevent>
-    <el-tree
-      ref="treeRef"
-      :data="data"
-      :props="defaultProps"
-      draggable
-      :allow-drop="allowDrop"
-      :allow-drag="allowDrag"
-      @node-drag-end="handleDragEnd"
-      @node-click="handleNodeClick"
-      @node-contextmenu="handleContextMenu"
-    >
-      <template #default="{ node, data }">
-        <div class="custom-tree-node">
-          <el-icon :class="getIconClass(data.type)">
-            <Folder v-if="data.type === 'group'" />
-            <Document v-else-if="data.type === 'schema'" />
-            <List v-else-if="data.type === 'column'" />
-          </el-icon>
-          <span>{{ data.name }}</span>
-        </div>
-      </template>
-    </el-tree>
+  <div class="schema-tree-container" @contextmenu.prevent="handleRootContextMenu">
+    <div class="schema-tree">
+      <el-tree
+        ref="treeRef"
+        :data="data"
+        :props="defaultProps"
+        draggable
+        :allow-drop="allowDrop"
+        :allow-drag="allowDrag"
+        @node-drag-end="handleDragEnd"
+        @node-click="handleNodeClick"
+        @node-contextmenu="handleNodeContextMenu"
+        default-expand-all
+      >
+        <template #default="{ node, data }">
+          <div class="custom-tree-node">
+            <el-icon :class="getIconClass(data.type)">
+              <Folder v-if="data.type === 'group'" />
+              <Document v-else-if="data.type === 'schema'" />
+              <List v-else-if="data.type === 'column'" />
+            </el-icon>
+            <span>{{ data.name }}</span>
+          </div>
+        </template>
+      </el-tree>
+    </div>
 
     <el-dialog
       v-model="contextMenuVisible"
@@ -34,7 +37,7 @@
       @click.self="contextMenuVisible = false"
     >
       <div class="context-menu-content" @click.stop>
-        <!-- 根据当前节点类型显示不同的添加选项 -->
+        <!-- 根节点或分组节点的菜单项 -->
         <template v-if="!currentNode || currentNode.type === 'group'">
           <div class="menu-item" @click="handleAddNode('group')">
             <el-icon><FolderAdd /></el-icon>
@@ -45,6 +48,8 @@
             Add Schema
           </div>
         </template>
+
+        <!-- Schema 节点的菜单项 -->
         <template v-if="currentNode && currentNode.type === 'schema'">
           <div class="menu-item" @click="handleAddNode('column')">
             <el-icon><Plus /></el-icon>
@@ -52,7 +57,7 @@
           </div>
         </template>
 
-        <!-- 复制选项对所有节点都显示 -->
+        <!-- 复制选项对所有非根节点显示 -->
         <template v-if="currentNode">
           <div class="menu-item" @click="handleCopyNode">
             <el-icon><CopyDocument /></el-icon>
@@ -68,7 +73,7 @@
           </div>
         </template>
 
-        <!-- 删除选项始终显示，除非是根节点 -->
+        <!-- 删除选项对所有非根节点显示 -->
         <template v-if="currentNode">
           <div class="menu-item danger" @click="handleDeleteNode">
             <el-icon><Delete /></el-icon>
@@ -149,245 +154,309 @@
   </div>
 </template>
 
-<script setup>
-import { ref, defineProps, defineEmits } from 'vue'
+<script>
+import { ref, defineComponent, watch } from 'vue'
 import { Folder, Document, List, FolderAdd, DocumentAdd, Plus, Delete, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 
-const props = defineProps({
-  data: {
-    type: Array,
-    required: true
-  }
-})
-
-const emit = defineEmits(['node-click', 'node-drop', 'node-add', 'node-delete', 'node-copy', 'node-set-group'])
-
-const treeRef = ref(null)
-const groupSelectTree = ref(null)
-const contextMenuVisible = ref(false)
-const groupSelectVisible = ref(false)
-const createGroupVisible = ref(false)
-const contextMenuStyle = ref({
-  position: 'fixed',
-  top: '0px',
-  left: '0px',
-  margin: '0'
-})
-const currentNode = ref(null)
-const selectedGroupNode = ref(null)
-const newGroupForm = ref({
-  name: '',
-  color: '#409EFF',
-  description: ''
-})
-
-const defaultProps = {
-  children: 'children',
-  label: 'name'
-}
-
-const getIconClass = (type) => {
-  return {
-    'tree-icon': true,
-    'is-group': type === 'group',
-    'is-schema': type === 'schema',
-    'is-column': type === 'column'
-  }
-}
-
-const handleNodeClick = (data, node) => {
-  emit('node-click', data)
-}
-
-const handleContextMenu = (event, data, node) => {
-  event.preventDefault()
-  currentNode.value = data
-  contextMenuStyle.value = {
-    position: 'fixed',
-    top: event.clientY + 'px',
-    left: event.clientX + 'px',
-    margin: '0'
-  }
-  contextMenuVisible.value = true
-}
-
-const generateId = () => {
-  return Date.now().toString()
-}
-
-const handleAddNode = (type) => {
-  const newNode = {
-    id: generateId(),
-    name: type === 'group' ? 'New Group' : type === 'schema' ? 'New Schema' : 'New Column',
-    type: type,
-    color: '#409EFF',
-    description: '',
-    children: type !== 'column' ? [] : undefined
-  }
-
-  if (type === 'schema') {
-    newNode.database = ''
-    newNode.tableName = ''
-  } else if (type === 'column') {
-    newNode.dataType = 'string'
-    newNode.required = false
-    newNode.defaultValue = null
-  }
-
-  emit('node-add', newNode, currentNode.value)
-  contextMenuVisible.value = false
-}
-
-const handleDeleteNode = () => {
-  ElMessageBox.confirm(
-    'Are you sure you want to delete this node? All child nodes will also be deleted.',
-    'Confirm Delete',
-    {
-      confirmButtonText: 'Delete',
-      cancelButtonText: 'Cancel',
-      type: 'warning'
+export default defineComponent({
+  name: 'SchemaTree',
+  components: {
+    Folder,
+    Document,
+    List,
+    FolderAdd,
+    DocumentAdd,
+    Plus,
+    Delete,
+    CopyDocument
+  },
+  props: {
+    data: {
+      type: Array,
+      required: true
     }
-  ).then(() => {
-    emit('node-delete', currentNode.value)
-    contextMenuVisible.value = false
-  }).catch(() => {})
-}
+  },
+  emits: ['node-click', 'node-drop', 'node-add', 'node-delete', 'node-copy', 'node-set-group'],
+  setup(props, { emit }) {
+    const treeRef = ref(null)
+    const groupSelectTree = ref(null)
+    const contextMenuVisible = ref(false)
+    const groupSelectVisible = ref(false)
+    const createGroupVisible = ref(false)
+    const contextMenuStyle = ref({
+      position: 'fixed',
+      top: '0px',
+      left: '0px',
+      margin: '0'
+    })
+    const currentNode = ref(null)
+    const selectedGroupNode = ref(null)
+    const newGroupForm = ref({
+      name: '',
+      color: '#409EFF',
+      description: ''
+    })
 
-const handleCopyNode = () => {
-  const copyNode = (node) => {
-    const newNode = { ...node }
-    newNode.id = generateId()
-    if (newNode.children) {
-      newNode.children = newNode.children.map(child => copyNode(child))
+    const defaultProps = {
+      children: 'children',
+      label: 'name'
     }
-    return newNode
-  }
 
-  const copiedNode = copyNode(currentNode.value)
-  copiedNode.name = `${copiedNode.name} (Copy)`
-  emit('node-copy', copiedNode, currentNode.value)
-  contextMenuVisible.value = false
-}
+    const generateId = () => {
+      return Date.now().toString()
+    }
 
-const hasParentNode = (node) => {
-  const findParent = (items, targetId) => {
-    for (const item of items) {
-      if (item.children) {
-        if (item.children.some(child => child.id === targetId)) {
-          return true
-        }
-        if (findParent(item.children, targetId)) {
-          return true
-        }
+    const getIconClass = (type) => {
+      return {
+        'tree-icon': true,
+        'is-group': type === 'group',
+        'is-schema': type === 'schema',
+        'is-column': type === 'column'
       }
     }
-    return false
-  }
-  return findParent(props.data, node.id)
-}
 
-const getGroupNodes = () => {
-  const filterGroups = (items) => {
-    return items.filter(item => item.type === 'group').map(item => ({
-      ...item,
-      children: item.children ? filterGroups(item.children) : []
-    }))
-  }
-  return filterGroups(props.data)
-}
-
-const handleSetGroup = () => {
-  groupSelectVisible.value = true
-  contextMenuVisible.value = false
-}
-
-const handleGroupSelect = (data) => {
-  selectedGroupNode.value = data
-}
-
-const handleGroupSelectConfirm = () => {
-  if (selectedGroupNode.value) {
-    // 先发送设置分组的事件
-    emit('node-set-group', currentNode.value, selectedGroupNode.value)
-    // 关闭所有对话框
-    groupSelectVisible.value = false
-    selectedGroupNode.value = null
-    contextMenuVisible.value = false
-  }
-}
-
-const handleCreateGroup = () => {
-  selectedGroupNode.value = null
-  createGroupVisible.value = true
-}
-
-const handleCreateSubGroup = () => {
-  createGroupVisible.value = true
-}
-
-const handleCreateGroupConfirm = () => {
-  const newGroup = {
-    id: generateId(),
-    name: newGroupForm.value.name,
-    type: 'group',
-    color: newGroupForm.value.color,
-    description: newGroupForm.value.description,
-    children: []
-  }
-
-  // 发送添加分组的事件
-  emit('node-add', newGroup, selectedGroupNode.value)
-  
-  // 如果是从设置分组对话框创建的，自动选中新创建的分组
-  if (groupSelectVisible.value) {
-    selectedGroupNode.value = newGroup
-  }
-
-  createGroupVisible.value = false
-  // 重置表单
-  newGroupForm.value = {
-    name: '',
-    color: '#409EFF',
-    description: ''
-  }
-}
-
-const allowDrop = (draggingNode, dropNode, type) => {
-  const draggingType = draggingNode.data.type
-  const dropType = dropNode.data.type
-
-  if (type === 'prev' || type === 'next') {
-    return draggingType === dropType
-  }
-
-  if (type === 'inner') {
-    if (dropType === 'group') {
-      return draggingType === 'group' || draggingType === 'schema'
+    const handleNodeClick = (data) => {
+      emit('node-click', data)
     }
-    if (dropType === 'schema') {
-      return draggingType === 'column'
+
+    const handleRootContextMenu = (event) => {
+      const isTreeContainer = event.target.classList.contains('schema-tree-container') ||
+                            event.target.classList.contains('schema-tree')
+      if (isTreeContainer) {
+        event.preventDefault()
+        event.stopPropagation()
+        currentNode.value = null
+        contextMenuStyle.value = {
+          position: 'fixed',
+          top: event.clientY + 'px',
+          left: event.clientX + 'px',
+          margin: '0'
+        }
+        contextMenuVisible.value = true
+      }
+    }
+
+    const handleNodeContextMenu = (event, data, node) => {
+      event.preventDefault()
+      event.stopPropagation()
+      currentNode.value = data
+      contextMenuStyle.value = {
+        position: 'fixed',
+        top: event.clientY + 'px',
+        left: event.clientX + 'px',
+        margin: '0'
+      }
+      contextMenuVisible.value = true
+    }
+
+    const handleAddNode = (type) => {
+      const newNode = {
+        id: generateId(),
+        name: type === 'group' ? 'New Group' : type === 'schema' ? 'New Schema' : 'New Column',
+        type: type,
+        color: '#409EFF',
+        description: '',
+        children: type !== 'column' ? [] : undefined
+      }
+
+      if (type === 'schema') {
+        newNode.database = ''
+        newNode.tableName = ''
+      } else if (type === 'column') {
+        newNode.dataType = 'string'
+        newNode.required = false
+        newNode.defaultValue = null
+      }
+
+      emit('node-add', newNode, currentNode.value)
+      contextMenuVisible.value = false
+    }
+
+    const handleDeleteNode = () => {
+      ElMessageBox.confirm(
+        'Are you sure you want to delete this node? All child nodes will also be deleted.',
+        'Confirm Delete',
+        {
+          confirmButtonText: 'Delete',
+          cancelButtonText: 'Cancel',
+          type: 'warning'
+        }
+      ).then(() => {
+        emit('node-delete', currentNode.value)
+        contextMenuVisible.value = false
+      }).catch(() => {})
+    }
+
+    const handleCopyNode = () => {
+      const copyNode = (node) => {
+        const newNode = { ...node }
+        newNode.id = generateId()
+        if (newNode.children) {
+          newNode.children = newNode.children.map(child => copyNode(child))
+        }
+        return newNode
+      }
+
+      const copiedNode = copyNode(currentNode.value)
+      copiedNode.name = `${copiedNode.name} (Copy)`
+      emit('node-copy', copiedNode, currentNode.value)
+      contextMenuVisible.value = false
+    }
+
+    const hasParentNode = (node) => {
+      const findParent = (items, targetId) => {
+        for (const item of items) {
+          if (item.children) {
+            if (item.children.some(child => child.id === targetId)) {
+              return true
+            }
+            if (findParent(item.children, targetId)) {
+              return true
+            }
+          }
+        }
+        return false
+      }
+      return findParent(props.data, node.id)
+    }
+
+    const getGroupNodes = () => {
+      const filterGroups = (items) => {
+        return items.filter(item => item.type === 'group').map(item => ({
+          ...item,
+          children: item.children ? filterGroups(item.children) : []
+        }))
+      }
+      return filterGroups(props.data)
+    }
+
+    const handleSetGroup = () => {
+      groupSelectVisible.value = true
+      contextMenuVisible.value = false
+    }
+
+    const handleGroupSelect = (data) => {
+      selectedGroupNode.value = data
+    }
+
+    const handleGroupSelectConfirm = () => {
+      if (selectedGroupNode.value) {
+        emit('node-set-group', currentNode.value, selectedGroupNode.value)
+        groupSelectVisible.value = false
+        selectedGroupNode.value = null
+        contextMenuVisible.value = false
+      }
+    }
+
+    const handleCreateGroup = () => {
+      selectedGroupNode.value = null
+      createGroupVisible.value = true
+    }
+
+    const handleCreateSubGroup = () => {
+      createGroupVisible.value = true
+    }
+
+    const handleCreateGroupConfirm = () => {
+      const newGroup = {
+        id: generateId(),
+        name: newGroupForm.value.name,
+        type: 'group',
+        color: newGroupForm.value.color,
+        description: newGroupForm.value.description,
+        children: []
+      }
+
+      emit('node-add', newGroup, selectedGroupNode.value)
+      
+      if (groupSelectVisible.value) {
+        selectedGroupNode.value = newGroup
+      }
+
+      createGroupVisible.value = false
+      newGroupForm.value = {
+        name: '',
+        color: '#409EFF',
+        description: ''
+      }
+    }
+
+    const allowDrop = (draggingNode, dropNode, type) => {
+      const draggingType = draggingNode.data.type
+      const dropType = dropNode.data.type
+
+      if (type === 'prev' || type === 'next') {
+        return draggingType === dropType
+      }
+
+      if (type === 'inner') {
+        if (dropType === 'group') {
+          return draggingType === 'group' || draggingType === 'schema'
+        }
+        if (dropType === 'schema') {
+          return draggingType === 'column'
+        }
+      }
+
+      return false
+    }
+
+    const allowDrag = () => {
+      return true
+    }
+
+    const handleDragEnd = (draggingNode, dropNode, dropType) => {
+      if (dropNode) {
+        emit('node-drop', draggingNode.data, dropNode.data, dropType)
+      }
+    }
+
+    return {
+      treeRef,
+      groupSelectTree,
+      contextMenuVisible,
+      groupSelectVisible,
+      createGroupVisible,
+      contextMenuStyle,
+      currentNode,
+      selectedGroupNode,
+      newGroupForm,
+      defaultProps,
+      getIconClass,
+      handleNodeClick,
+      handleRootContextMenu,
+      handleNodeContextMenu,
+      handleAddNode,
+      handleDeleteNode,
+      handleCopyNode,
+      hasParentNode,
+      getGroupNodes,
+      handleSetGroup,
+      handleGroupSelect,
+      handleGroupSelectConfirm,
+      handleCreateGroup,
+      handleCreateSubGroup,
+      handleCreateGroupConfirm,
+      allowDrop,
+      allowDrag,
+      handleDragEnd
     }
   }
-
-  return false
-}
-
-const allowDrag = (node) => {
-  return true
-}
-
-const handleDragEnd = (draggingNode, dropNode, dropType) => {
-  if (dropNode) {
-    emit('node-drop', draggingNode.data, dropNode.data, dropType)
-  }
-}
+})
 </script>
 
 <style scoped>
-.schema-tree {
-  padding: 10px;
+.schema-tree-container {
+  height: 100%;
   position: relative;
+  padding: 10px;
+  min-height: 200px;
+  background-color: #fff;
+}
+
+.schema-tree {
+  height: 100%;
 }
 
 .custom-tree-node {

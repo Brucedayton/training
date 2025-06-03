@@ -9,21 +9,36 @@
   </div>
 </template>
 
-<script setup>
-import { ref } from 'vue'
+<script>
+import { ref, defineComponent } from 'vue'
 import SchemaDialog from './components/SchemaDialog.vue'
 
-const dialogVisible = ref(false)
-const schemaData = ref([])
+export default defineComponent({
+  name: 'App',
+  components: {
+    SchemaDialog
+  },
+  setup() {
+    const dialogVisible = ref(false)
+    const schemaData = ref([])
 
-const showDialog = () => {
-  dialogVisible.value = true
-}
+    const showDialog = () => {
+      dialogVisible.value = true
+    }
 
-const handleSave = (data) => {
-  console.log('Saved data:', data)
-  schemaData.value = data
-}
+    const handleSave = (data) => {
+      console.log('Saved data:', data)
+      schemaData.value = data
+    }
+
+    return {
+      dialogVisible,
+      schemaData,
+      showDialog,
+      handleSave
+    }
+  }
+})
 </script>
 
 <style>
