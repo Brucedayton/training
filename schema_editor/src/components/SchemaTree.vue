@@ -5,6 +5,9 @@
         ref="treeRef"
         :data="data"
         :props="defaultProps"
+        node-key="id"
+        :current-node-key="currentNodeKey"
+        highlight-current
         draggable
         :allow-drop="allowDrop"
         :allow-drag="allowDrag"
@@ -155,7 +158,7 @@
 </template>
 
 <script>
-import { ref, defineComponent, watch } from 'vue'
+import { ref, defineComponent, watch, computed } from 'vue'
 import { Folder, Document, List, FolderAdd, DocumentAdd, Plus, Delete, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 
@@ -175,6 +178,10 @@ export default defineComponent({
     data: {
       type: Array,
       required: true
+    },
+    currentNode: {
+      type: Object,
+      default: null
     }
   },
   emits: ['node-click', 'node-drop', 'node-add', 'node-delete', 'node-copy', 'node-set-group'],
@@ -197,6 +204,7 @@ export default defineComponent({
       color: '#409EFF',
       description: ''
     })
+    const currentNodeKey = computed(() => props.currentNode?.id)
 
     const defaultProps = {
       children: 'children',
@@ -383,31 +391,35 @@ export default defineComponent({
     }
 
     const allowDrop = (draggingNode, dropNode, type) => {
+      if (type === 'inner') {
+        return false
+      }
+
       const draggingType = draggingNode.data.type
       const dropType = dropNode.data.type
 
-      if (type === 'prev' || type === 'next') {
-        return draggingType === dropType
+      if (draggingType !== dropType) {
+        return false
       }
 
-      if (type === 'inner') {
-        if (dropType === 'group') {
-          return draggingType === 'group' || draggingType === 'schema'
-        }
-        if (dropType === 'schema') {
-          return draggingType === 'column'
-        }
+      const isRoot = (node) => {
+        return !node.parent || node.parent.data.id === undefined
       }
 
-      return false
+      if (isRoot(dropNode)) {
+        return isRoot(draggingNode)
+      }
+
+      return draggingNode.parent && dropNode.parent && 
+             draggingNode.parent.data.id === dropNode.parent.data.id
     }
 
-    const allowDrag = () => {
+    const allowDrag = (node) => {
       return true
     }
 
     const handleDragEnd = (draggingNode, dropNode, dropType) => {
-      if (dropNode) {
+      if (dropNode && dropType !== 'inner') {
         emit('node-drop', draggingNode.data, dropNode.data, dropType)
       }
     }
@@ -440,7 +452,8 @@ export default defineComponent({
       handleCreateGroupConfirm,
       allowDrop,
       allowDrag,
-      handleDragEnd
+      handleDragEnd,
+      currentNodeKey
     }
   }
 })

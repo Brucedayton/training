@@ -15,6 +15,7 @@
         <schema-tree
           v-else
           :data="treeData"
+          :current-node="currentNode"
           @node-click="handleNodeClick"
           @node-drop="handleNodeDrop"
           @node-add="handleNodeAdd"
@@ -216,11 +217,60 @@ export default defineComponent({
     }
 
     const handleNodeDrop = (draggingNode, dropNode, dropType) => {
-      if (draggingNode.type !== dropNode.type) {
-        ElMessage.error('Can only move between nodes of the same type')
-        return false
+      // 找到要移动的节点和目标节点所在的数组
+      const findNodesArray = (items, targetId) => {
+        // 检查根级别
+        if (items.some(item => item.id === targetId)) {
+          return items
+        }
+
+        // 递归检查子级
+        for (const item of items) {
+          if (item.children) {
+            if (item.children.some(child => child.id === targetId)) {
+              return item.children
+            }
+            const result = findNodesArray(item.children, targetId)
+            if (result) {
+              return result
+            }
+          }
+        }
+        return null
       }
-      return true
+
+      // 获取节点所在的数组
+      const nodesArray = findNodesArray(treeData.value, dropNode.id)
+      if (!nodesArray) {
+        return
+      }
+
+      // 找到源节点和目标节点的索引
+      const dragIndex = nodesArray.findIndex(item => item.id === draggingNode.id)
+      const dropIndex = nodesArray.findIndex(item => item.id === dropNode.id)
+
+      if (dragIndex === -1 || dropIndex === -1) {
+        return
+      }
+
+      // 从原位置移除节点
+      const [movedNode] = nodesArray.splice(dragIndex, 1)
+
+      // 计算新的插入位置
+      let newIndex = dropIndex
+      if (dropType === 'next') {
+        newIndex++
+      }
+      // 如果拖动位置在目标位置之前，需要调整目标位置
+      if (dragIndex < dropIndex) {
+        newIndex--
+      }
+
+      // 在新位置插入节点
+      nodesArray.splice(newIndex, 0, movedNode)
+
+      // 触发更新
+      treeData.value = [...treeData.value]
     }
 
     const handleNodeUpdate = (updatedNode) => {
