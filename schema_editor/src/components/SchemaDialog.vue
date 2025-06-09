@@ -22,6 +22,7 @@
           @node-delete="handleNodeDelete"
           @node-copy="handleNodeCopy"
           @node-set-group="handleNodeSetGroup"
+          @node-unlink="handleUnlink"
           ref="schemaTreeRef"
         />
       </div>
@@ -49,7 +50,7 @@
 
 <script>
 import { ref, defineComponent, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import SchemaTree from './SchemaTree.vue'
 import SchemaForm from './SchemaForm.vue'
 
@@ -165,22 +166,54 @@ export default defineComponent({
     }
 
     const handleNodeCopy = (copiedNode, sourceNode) => {
-      const addCopyToParent = (items) => {
-        return items.map(item => {
-          if (item.children && item.children.some(child => child.id === sourceNode.id)) {
-            item.children.push(copiedNode)
-            return item
+      // 弹出确认框，询问是否需要链接到源节点
+      ElMessageBox.confirm(
+        'Do you want to link this copy to the source node? Linked nodes will be updated together when source node changes.',
+        'Copy Mode',
+        {
+          confirmButtonText: 'Link to Source',
+          cancelButtonText: 'Independent Copy',
+          distinguishCancelAndClose: true,
+          type: 'info'
+        }
+      ).then(() => {
+        // 用户选择链接模式
+        const newNode = {
+          ...copiedNode,
+          sourceId: sourceNode.id,  // 记录源节点ID
+          isLinked: true           // 标记为链接模式
+        }
+        addCopyNodeToTree(newNode, sourceNode)
+      }).catch((action) => {
+        if (action === 'cancel') {
+          // 用户选择独立复制
+          const newNode = {
+            ...copiedNode,
+            sourceId: null,
+            isLinked: false
           }
-          if (item.children) {
-            item.children = addCopyToParent(item.children)
-          }
-          return item
-        })
-      }
+          addCopyNodeToTree(newNode, sourceNode)
+        }
+      })
+    }
 
+    // 添加复制节点到树中的辅助函数
+    const addCopyNodeToTree = (copiedNode, sourceNode) => {
       if (!hasParentNode(sourceNode)) {
         treeData.value = [...treeData.value, copiedNode]
       } else {
+        const addCopyToParent = (items) => {
+          return items.map(item => {
+            if (item.children && item.children.some(child => child.id === sourceNode.id)) {
+              item.children.push(copiedNode)
+              return item
+            }
+            if (item.children) {
+              item.children = addCopyToParent(item.children)
+            }
+            return item
+          })
+        }
         treeData.value = addCopyToParent([...treeData.value])
       }
       currentNode.value = copiedNode
@@ -277,7 +310,12 @@ export default defineComponent({
       const updateNode = (items) => {
         return items.map(item => {
           if (item.id === updatedNode.id) {
-            return { ...item, ...updatedNode }
+            const newNode = { ...item, ...updatedNode }
+            // 如果当前节点是源节点，更新所有链接到它的节点
+            if (isSourceNode(item)) {
+              updateLinkedNodes(items, newNode)
+            }
+            return newNode
           }
           if (item.children) {
             item.children = updateNode(item.children)
@@ -286,6 +324,70 @@ export default defineComponent({
         })
       }
       treeData.value = updateNode([...treeData.value])
+    }
+
+    // 检查节点是否是其他节点的源节点
+    const isSourceNode = (node) => {
+      const hasLinkedNodes = (items) => {
+        for (const item of items) {
+          if (item.sourceId === node.id && item.isLinked) {
+            return true
+          }
+          if (item.children && hasLinkedNodes(item.children)) {
+            return true
+          }
+        }
+        return false
+      }
+      return hasLinkedNodes(treeData.value)
+    }
+
+    // 更新所有链接的节点
+    const updateLinkedNodes = (items, sourceNode) => {
+      for (const item of items) {
+        if (item.sourceId === sourceNode.id && item.isLinked) {
+          // 更新链接节点，但保留其ID和链接状态
+          Object.assign(item, {
+            ...sourceNode,
+            id: item.id,
+            sourceId: item.sourceId,
+            isLinked: item.isLinked
+          })
+        }
+        if (item.children) {
+          updateLinkedNodes(item.children, sourceNode)
+        }
+      }
+    }
+
+    // 添加取消链接的功能
+    const handleUnlink = (node) => {
+      ElMessageBox.confirm(
+        'Are you sure to unlink this node from its source? It will become an independent node.',
+        'Unlink Node',
+        {
+          confirmButtonText: 'Unlink',
+          cancelButtonText: 'Cancel',
+          type: 'warning'
+        }
+      ).then(() => {
+        const unlinkNode = (items) => {
+          return items.map(item => {
+            if (item.id === node.id) {
+              return {
+                ...item,
+                sourceId: null,
+                isLinked: false
+              }
+            }
+            if (item.children) {
+              item.children = unlinkNode(item.children)
+            }
+            return item
+          })
+        }
+        treeData.value = unlinkNode([...treeData.value])
+      }).catch(() => {})
     }
 
     const hasParentNode = (node) => {
@@ -319,7 +421,8 @@ export default defineComponent({
       handleNodeCopy,
       handleNodeSetGroup,
       handleNodeDrop,
-      handleNodeUpdate
+      handleNodeUpdate,
+      handleUnlink
     }
   }
 })

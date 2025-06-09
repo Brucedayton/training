@@ -68,6 +68,14 @@
           </div>
         </template>
 
+        <!-- 链接节点显示取消链接选项 -->
+        <template v-if="currentNode && currentNode.isLinked">
+          <div class="menu-item" @click="handleUnlinkNode">
+            <el-icon><Link /></el-icon>
+            Unlink from Source
+          </div>
+        </template>
+
         <!-- Schema节点且没有父节点时显示设置分组选项 -->
         <template v-if="currentNode && currentNode.type === 'schema' && !hasParentNode(currentNode)">
           <div class="menu-item" @click="handleSetGroup">
@@ -159,7 +167,7 @@
 
 <script>
 import { ref, defineComponent, watch, computed } from 'vue'
-import { Folder, Document, List, FolderAdd, DocumentAdd, Plus, Delete, CopyDocument } from '@element-plus/icons-vue'
+import { Folder, Document, List, FolderAdd, DocumentAdd, Plus, Delete, CopyDocument, Link } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 
 export default defineComponent({
@@ -172,7 +180,8 @@ export default defineComponent({
     DocumentAdd,
     Plus,
     Delete,
-    CopyDocument
+    CopyDocument,
+    Link
   },
   props: {
     data: {
@@ -184,7 +193,7 @@ export default defineComponent({
       default: null
     }
   },
-  emits: ['node-click', 'node-drop', 'node-add', 'node-delete', 'node-copy', 'node-set-group'],
+  emits: ['node-click', 'node-drop', 'node-add', 'node-delete', 'node-copy', 'node-set-group', 'node-unlink'],
   setup(props, { emit }) {
     const treeRef = ref(null)
     const groupSelectTree = ref(null)
@@ -390,6 +399,11 @@ export default defineComponent({
       }
     }
 
+    const handleUnlinkNode = () => {
+      emit('node-unlink', currentNode.value)
+      contextMenuVisible.value = false
+    }
+
     const allowDrop = (draggingNode, dropNode, type) => {
       if (type === 'inner') {
         return false
@@ -450,6 +464,7 @@ export default defineComponent({
       handleCreateGroup,
       handleCreateSubGroup,
       handleCreateGroupConfirm,
+      handleUnlinkNode,
       allowDrop,
       allowDrag,
       handleDragEnd,
