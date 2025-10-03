@@ -1,0 +1,133 @@
+<template>
+  <el-dialog
+    :model-value="dialogVisible"
+    @update:model-value="$emit('update:visible', $event)"
+    title="Add Group"
+    width="500px"
+    @close="handleClose"
+  >
+    <el-form :model="form" :rules="rules" ref="formRef" label-width="80px">
+      <el-form-item label="Group Name" prop="name">
+        <el-input v-model="form.name" placeholder="Enter group name" />
+      </el-form-item>
+      <el-form-item label="Description" prop="description">
+        <el-input
+          v-model="form.description"
+          type="textarea"
+          :rows="3"
+          placeholder="Enter group description"
+        />
+      </el-form-item>
+      <el-form-item label="Members" prop="members">
+        <el-select
+          v-model="form.members"
+          multiple
+          placeholder="Select group members"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="user in users"
+            :key="user.id"
+            :label="user.name"
+            :value="user.id"
+          />
+        </el-select>
+      </el-form-item>
+    </el-form>
+    
+    <template #footer>
+      <div class="dialog-footer">
+        <el-button @click="handleClose">Cancel</el-button>
+        <el-button type="primary" @click="handleSubmit">Confirm</el-button>
+      </div>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup>
+import { ref, reactive, computed } from 'vue'
+import { ElMessage } from 'element-plus'
+
+const props = defineProps({
+  visible: {
+    type: Boolean,
+    default: false
+  },
+  users: {
+    type: Array,
+    default: () => []
+  }
+})
+
+const emit = defineEmits(['update:visible', 'group-added'])
+
+const formRef = ref()
+
+const form = reactive({
+  name: '',
+  description: '',
+  members: []
+})
+
+const rules = {
+  name: [
+    { required: true, message: 'Please enter group name', trigger: 'blur' }
+  ],
+  description: [
+    { required: true, message: 'Please enter group description', trigger: 'blur' }
+  ],
+  members: [
+    { required: true, message: 'Please select group members', trigger: 'change' }
+  ]
+}
+
+const dialogVisible = computed({
+  get: () => props.visible,
+  set: (value) => emit('update:visible', value)
+})
+
+const handleClose = () => {
+  dialogVisible.value = false
+  resetForm()
+}
+
+const handleSubmit = async () => {
+  if (!formRef.value) return
+  
+  try {
+    await formRef.value.validate()
+    
+    const group = {
+      id: Date.now(),
+      name: form.name,
+      description: form.description,
+      memberCount: form.members.length,
+      members: form.members
+    }
+    
+    emit('group-added', group)
+    handleClose()
+  } catch (error) {
+    console.error('Form validation failed:', error)
+  }
+}
+
+const resetForm = () => {
+  Object.assign(form, {
+    name: '',
+    description: '',
+    members: []
+  })
+  if (formRef.value) {
+    formRef.value.resetFields()
+  }
+}
+</script>
+
+<style scoped>
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+</style>
